@@ -63,10 +63,25 @@ class ProjectSyncer:
 
         return deleted_count
 
+    def _read_text_safely(self, file_path: Path) -> Optional[str]:
+        """
+        文字コードのフォールバックを行いながら安全にテキストを読み込む。
+        バイナリファイル等でデコードできない場合は None を返す。
+        """
+        encodings = ("utf-8", "utf-8-sig", "cp932")
+        for enc in encodings:
+            try:
+                with open(file_path, "r", encoding=enc) as f:
+                    return f.read()
+            except (UnicodeDecodeError, OSError):
+                continue
+        return None
+
     def _read_and_analyze_only(self, src_file: Path, rel_path: str) -> str:
+        content = self._read_text_safely(src_file)
+        if content is None:
+            return ""
         try:
-            with open(src_file, "r", encoding="utf-8") as f:
-                content = f.read()
             import ast
             tree = ast.parse(content)
             self.all_role_entries.extend(extract_roles_from_ast(tree, rel_path, content))
@@ -87,38 +102,41 @@ class ProjectSyncer:
             rel_path = src_file.relative_to(self.project_root).as_posix()
             dest_file = self.output_dir / rel_path
 
-            try:
-                with open(src_file, "r", encoding="utf-8") as f:
-                    raw_content = f.read()
+            raw_content = self._read_text_safely(src_file)
+            is_binary = raw_content is None
+
+            if not is_binary and raw_content is not None:
                 self.token_stats.raw_chars += len(raw_content)
-            except OSError:
-                raw_content = ""
 
             if not force_rebuild and not self._is_outdated(src_file, dest_file):
                 skipped_count += 1
-                if src_file.suffix == ".py":
+                if src_file.suffix == ".py" and not is_binary:
                     self._read_and_analyze_only(src_file, rel_path)
-                try:
-                    with open(dest_file, "r", encoding="utf-8") as f:
-                        dest_content = f.read()
-                    self.file_contents_map[rel_path] = dest_content
-                    self.token_stats.skeleton_chars += len(dest_content)
-                except OSError:
-                    pass
+                
+                if not is_binary:
+                    dest_content = self._read_text_safely(dest_file)
+                    if dest_content is not None:
+                        self.file_contents_map[rel_path] = dest_content
+                        self.token_stats.skeleton_chars += len(dest_content)
                 continue
 
             dest_file.parent.mkdir(parents=True, exist_ok=True)
 
-            if self.config.is_full_code_path(src_file) or src_file.suffix != ".py":
+            # 条件1: バイナリファイル、フルコード対象、または非Pythonファイル
+            if is_binary or self.config.is_full_code_path(src_file) or src_file.suffix != ".py":
                 shutil.copy2(src_file, dest_file)
                 updated_count += 1
-                self.file_contents_map[rel_path] = raw_content
-                self.token_stats.skeleton_chars += len(raw_content)
-                if src_file.suffix == ".py":
-                    self._read_and_analyze_only(src_file, rel_path)
+                
+                if not is_binary and raw_content is not None:
+                    self.file_contents_map[rel_path] = raw_content
+                    self.token_stats.skeleton_chars += len(raw_content)
+                    if src_file.suffix == ".py":
+                        self._read_and_analyze_only(src_file, rel_path)
                 continue
 
+            # 条件2: Pythonファイルのスケルトン化処理
             try:
+                assert raw_content is not None
                 skeleton_code, roles, dependency = process_code_all_in_one(
                     raw_content, rel_path, keep_functions=self.config.keep_functions
                 )
