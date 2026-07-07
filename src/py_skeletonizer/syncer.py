@@ -66,13 +66,16 @@ class ProjectSyncer:
     def _read_text_safely(self, file_path: Path) -> Optional[str]:
         """
         文字コードのフォールバックを行いながら安全にテキストを読み込む。
-        バイナリファイル等でデコードできない場合は None を返す。
+        BOM(U+FEFF)によるAST解析エラーを防ぐため utf-8-sig を最優先で試行し、
+        先頭の不可視記号をサニタイズして返す。
         """
-        encodings = ("utf-8", "utf-8-sig", "cp932")
+        encodings = ("utf-8-sig", "cp932", "utf-8")
         for enc in encodings:
             try:
                 with open(file_path, "r", encoding=enc) as f:
-                    return f.read()
+                    content = f.read()
+                    # 念のため不可視のBOM記号(U+FEFF)が先頭に残る場合は除去(サニタイズ)する
+                    return content.lstrip("\ufeff")
             except (UnicodeDecodeError, OSError):
                 continue
         return None
