@@ -140,7 +140,10 @@ def main(args: Optional[List[str]] = None) -> int:
             target_files, tree_text=tree_text, force_rebuild=parsed_args.force
         )
 
-        tree_file = output_dir / "project_tree.txt"
+        # ツリーファイルも ai_meta フォルダ直下に書き出すよう修正
+        meta_dir = output_dir / "ai_meta"
+        meta_dir.mkdir(parents=True, exist_ok=True)
+        tree_file = meta_dir / "project_tree.txt"
         tree_file.write_text("=== AI Context Project Structure ===\n" + tree_text, encoding="utf-8")
 
         stats = syncer.token_stats
@@ -150,12 +153,12 @@ def main(args: Optional[List[str]] = None) -> int:
         print(f"  - 変更なし(スキップ)   : {skipped_count} 件")
         if deleted_count > 0:
             print(f"  - 削除した古いファイル: {deleted_count} 件")
-        print("\n--- 📊 辞書・マニュアル出力 ---")
-        print(f"  - ツリー構造マップ     : project_tree.txt")
-        print(f"  - 役割退避マニュアル   : project_roles.md ✨")
-        print(f"  - 依存関係グラフ       : project_dependencies.md 🔗")
+        print("\n--- 📊 辞書・マニュアル出力 (ai_meta/ フォルダ内に隔離集約) ---")
+        print(f"  - ツリー構造マップ     : ai_meta/project_tree.txt")
+        print(f"  - 役割退避マニュアル   : ai_meta/project_roles.md ✨")
+        print(f"  - 依存関係グラフ       : ai_meta/project_dependencies.md 🔗")
         if bundle_path:
-            print(f"  - 単一統合バンドル     : {bundle_path.name} 📦 (ブラウザAIへそのままコピペ推奨)")
+            print(f"  - 単一統合バンドル     : ai_meta/{bundle_path.name} 📦 (ブラウザAIへそのままコピペ推奨)")
 
         print("\n--- 📉 トークン・予算削減アナライザー ---")
         print(f"  - 元コード推定トークン : 約 {stats.raw_tokens_est:,} tokens ({stats.raw_chars:,} 文字)")

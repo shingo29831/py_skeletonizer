@@ -22,6 +22,8 @@ class ProjectSyncer:
         self.all_dependency_entries: List[DependencyEntry] = []
         self.file_contents_map: Dict[str, str] = {}
         self.token_stats = TokenStats()
+        # メタデータファイルを隔離格納する専用フォルダパスの定義
+        self.meta_dir = output_dir / "ai_meta"
 
     def _is_outdated(self, src_file: Path, dest_file: Path) -> bool:
         if not dest_file.exists():
@@ -35,11 +37,13 @@ class ProjectSyncer:
         valid_dest_files = {
             self.output_dir / f.relative_to(self.project_root) for f in current_target_files
         }
-        valid_dest_files.add(self.output_dir / "project_tree.txt")
-        valid_dest_files.add(self.output_dir / "project_roles.md")
-        valid_dest_files.add(self.output_dir / "project_dependencies.md")
-        valid_dest_files.add(self.output_dir / "ai_context_bundle.xml")
-        valid_dest_files.add(self.output_dir / "ai_context_bundle.markdown")
+        
+        # 隔離フォルダ内のメタデータファイルを削除保護対象リストに追加
+        valid_dest_files.add(self.meta_dir / "project_tree.txt")
+        valid_dest_files.add(self.meta_dir / "project_roles.md")
+        valid_dest_files.add(self.meta_dir / "project_dependencies.md")
+        valid_dest_files.add(self.meta_dir / "ai_context_bundle.xml")
+        valid_dest_files.add(self.meta_dir / "ai_context_bundle.markdown")
 
         deleted_count = 0
         for root, _, files in os.walk(self.output_dir):
@@ -56,6 +60,9 @@ class ProjectSyncer:
             for d in dirs:
                 dir_path = Path(root) / d
                 try:
+                    # ai_metaフォルダ自体は中身が空であってもここでは削除しないよう保護
+                    if dir_path == self.meta_dir:
+                        continue
                     if not any(dir_path.iterdir()):
                         dir_path.rmdir()
                 except OSError:
@@ -64,17 +71,11 @@ class ProjectSyncer:
         return deleted_count
 
     def _read_text_safely(self, file_path: Path) -> Optional[str]:
-        """
-        文字コードのフォールバックを行いながら安全にテキストを読み込む。
-        BOM(U+FEFF)によるAST解析エラーを防ぐため utf-8-sig を最優先で試行し、
-        先頭の不可視記号をサニタイズして返す。
-        """
         encodings = ("utf-8-sig", "cp932", "utf-8")
         for enc in encodings:
             try:
                 with open(file_path, "r", encoding=enc) as f:
                     content = f.read()
-                    # 念のため不可視のBOM記号(U+FEFF)が先頭に残る場合は除去(サニタイズ)する
                     return content.lstrip("\ufeff")
             except (UnicodeDecodeError, OSError):
                 continue
@@ -125,7 +126,6 @@ class ProjectSyncer:
 
             dest_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # 条件1: バイナリファイル、フルコード対象、または非Pythonファイル
             if is_binary or self.config.is_full_code_path(src_file) or src_file.suffix != ".py":
                 shutil.copy2(src_file, dest_file)
                 updated_count += 1
@@ -137,7 +137,6 @@ class ProjectSyncer:
                         self._read_and_analyze_only(src_file, rel_path)
                 continue
 
-            # 条件2: Pythonファイルのスケルトン化処理
             try:
                 assert raw_content is not None
                 skeleton_code, roles, dependency = process_code_all_in_one(
@@ -156,19 +155,23 @@ class ProjectSyncer:
             except Exception as e:
                 raise RuntimeError(f"ファイル処理中にエラーが発生しました: {src_file} ({e})")
 
+        # ai_meta フォルダを確実に作成
+        self.meta_dir.mkdir(parents=True, exist_ok=True)
+
         role_map_text = generate_role_map_text(self.all_role_entries)
-        role_file = self.output_dir / "project_roles.md"
+        role_file = self.meta_dir / "project_roles.md"
         role_file.write_text(role_map_text, encoding="utf-8")
 
         dependency_map_text = generate_dependency_map_text(self.all_dependency_entries)
-        dep_file = self.output_dir / "project_dependencies.md"
+        dep_file = self.meta_dir / "project_dependencies.md"
         dep_file.write_text(dependency_map_text, encoding="utf-8")
 
         bundle_path: Optional[Path] = None
         if self.config.create_bundle:
+            # バンドル出力先を隔離フォルダ(self.meta_dir)へと移譲
             bundle_path = build_bundle_file(
                 project_root=self.project_root,
-                output_dir=self.output_dir,
+                output_dir=self.meta_dir,
                 tree_text=tree_text,
                 role_map_text=role_map_text,
                 dependency_map_text=dependency_map_text,
