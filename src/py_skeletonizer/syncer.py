@@ -1,38 +1,45 @@
 # src/py_skeletonizer/syncer.py
 """
-Role: 元のプロジェクトと出力先ディレクトリの差分を比較し、ファイルの生成・更新・削除を同期する。
+Role: プロジェクトの同期、各辞書マニュアルの作成、バンドル出力、およびトークン削減率の計算を統合制御する。
 """
 import os
 import shutil
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from .config import SkeletonConfig
-from .ast_processor import generate_skeleton_code
+from .ast_processor import process_code_all_in_one
+from .role_extractor import RoleEntry, extract_roles_from_ast, generate_role_map_text
+from .dependency_analyzer import DependencyEntry, extract_dependencies_from_ast, generate_dependency_map_text
+from .bundle_builder import TokenStats, build_bundle_file
+
 
 class ProjectSyncer:
     def __init__(self, project_root: Path, output_dir: Path, config: SkeletonConfig):
         self.project_root = project_root
         self.output_dir = output_dir
         self.config = config
+        self.all_role_entries: List[RoleEntry] = []
+        self.all_dependency_entries: List[DependencyEntry] = []
+        self.file_contents_map: Dict[str, str] = {}
+        self.token_stats = TokenStats()
 
     def _is_outdated(self, src_file: Path, dest_file: Path) -> bool:
         if not dest_file.exists():
             return True
-        # タイムスタンプ比較: ソースファイルが出力ファイルより新しければ更新対象とする
         return os.path.getmtime(src_file) > os.path.getmtime(dest_file)
 
     def clean_deleted_files(self, current_target_files: List[Path]) -> int:
-        """
-        出力先に存在するが、現在のプロジェクトターゲットに存在しない古いファイル・フォルダを削除する
-        """
         if not self.output_dir.exists():
             return 0
 
         valid_dest_files = {
             self.output_dir / f.relative_to(self.project_root) for f in current_target_files
         }
-        # project_tree.txtは同期プロセス自身が生成するため保護する
         valid_dest_files.add(self.output_dir / "project_tree.txt")
+        valid_dest_files.add(self.output_dir / "project_roles.md")
+        valid_dest_files.add(self.output_dir / "project_dependencies.md")
+        valid_dest_files.add(self.output_dir / "ai_context_bundle.xml")
+        valid_dest_files.add(self.output_dir / "ai_context_bundle.markdown")
 
         deleted_count = 0
         for root, _, files in os.walk(self.output_dir):
@@ -45,7 +52,6 @@ class ProjectSyncer:
                     except OSError as e:
                         raise RuntimeError(f"古いファイルの削除に失敗しました: {dest_path} ({e})")
 
-        # 空になったフォルダをクリーンアップする
         for root, dirs, _ in os.walk(self.output_dir, topdown=False):
             for d in dirs:
                 dir_path = Path(root) / d
@@ -57,46 +63,97 @@ class ProjectSyncer:
 
         return deleted_count
 
-    def sync_files(self, target_files: List[Path], force_rebuild: bool = False) -> Tuple[int, int]:
-        """
-        ファイルを差分処理し、(処理/更新した件数, スキップした件数) を返す
-        """
+    def _read_and_analyze_only(self, src_file: Path, rel_path: str) -> str:
+        try:
+            with open(src_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            import ast
+            tree = ast.parse(content)
+            self.all_role_entries.extend(extract_roles_from_ast(tree, rel_path, content))
+            self.all_dependency_entries.append(extract_dependencies_from_ast(tree, rel_path))
+            return content
+        except Exception:
+            return ""
+
+    def sync_files(self, target_files: List[Path], tree_text: str, force_rebuild: bool = False) -> Tuple[int, int, Optional[Path]]:
         updated_count = 0
         skipped_count = 0
+        self.all_role_entries.clear()
+        self.all_dependency_entries.clear()
+        self.file_contents_map.clear()
+        self.token_stats = TokenStats()
 
         for src_file in target_files:
-            rel_path = src_file.relative_to(self.project_root)
+            rel_path = src_file.relative_to(self.project_root).as_posix()
             dest_file = self.output_dir / rel_path
+
+            try:
+                with open(src_file, "r", encoding="utf-8") as f:
+                    raw_content = f.read()
+                self.token_stats.raw_chars += len(raw_content)
+            except OSError:
+                raw_content = ""
 
             if not force_rebuild and not self._is_outdated(src_file, dest_file):
                 skipped_count += 1
+                if src_file.suffix == ".py":
+                    self._read_and_analyze_only(src_file, rel_path)
+                try:
+                    with open(dest_file, "r", encoding="utf-8") as f:
+                        dest_content = f.read()
+                    self.file_contents_map[rel_path] = dest_content
+                    self.token_stats.skeleton_chars += len(dest_content)
+                except OSError:
+                    pass
                 continue
 
             dest_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # 条件1: 指定パスまたはフォルダ配下の場合はフルコードでそのままコピー
             if self.config.is_full_code_path(src_file) or src_file.suffix != ".py":
                 shutil.copy2(src_file, dest_file)
                 updated_count += 1
+                self.file_contents_map[rel_path] = raw_content
+                self.token_stats.skeleton_chars += len(raw_content)
+                if src_file.suffix == ".py":
+                    self._read_and_analyze_only(src_file, rel_path)
                 continue
 
-            # 条件2: Pythonファイルかつ一部または全スケルトン化対象
             try:
-                with open(src_file, "r", encoding="utf-8") as f:
-                    source_code = f.read()
-
-                skeleton_code = generate_skeleton_code(
-                    source_code, keep_functions=self.config.keep_functions
+                skeleton_code, roles, dependency = process_code_all_in_one(
+                    raw_content, rel_path, keep_functions=self.config.keep_functions
                 )
+                self.all_role_entries.extend(roles)
+                self.all_dependency_entries.append(dependency)
+                self.file_contents_map[rel_path] = skeleton_code
+                self.token_stats.skeleton_chars += len(skeleton_code)
 
                 with open(dest_file, "w", encoding="utf-8") as f:
                     f.write(skeleton_code)
-                
-                # 次回の差分検知のためにタイムスタンプを同期
+
                 shutil.copystat(src_file, dest_file)
                 updated_count += 1
             except Exception as e:
-                # エラー握り潰し禁止のポリシーに従い、例外をラップして通知
                 raise RuntimeError(f"ファイル処理中にエラーが発生しました: {src_file} ({e})")
 
-        return updated_count, skipped_count
+        role_map_text = generate_role_map_text(self.all_role_entries)
+        role_file = self.output_dir / "project_roles.md"
+        role_file.write_text(role_map_text, encoding="utf-8")
+
+        dependency_map_text = generate_dependency_map_text(self.all_dependency_entries)
+        dep_file = self.output_dir / "project_dependencies.md"
+        dep_file.write_text(dependency_map_text, encoding="utf-8")
+
+        bundle_path: Optional[Path] = None
+        if self.config.create_bundle:
+            bundle_path = build_bundle_file(
+                project_root=self.project_root,
+                output_dir=self.output_dir,
+                tree_text=tree_text,
+                role_map_text=role_map_text,
+                dependency_map_text=dependency_map_text,
+                file_contents=self.file_contents_map,
+                bundle_format=self.config.bundle_format,
+                custom_policy_path=self.config.policy_path,
+            )
+
+        return updated_count, skipped_count, bundle_path
