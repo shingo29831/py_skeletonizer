@@ -10,6 +10,9 @@ from typing import List, Optional, Set
 from .config import SkeletonConfig
 from .scanner import get_target_files, generate_tree_text
 from .syncer import ProjectSyncer
+from .layer_filter import filter_logic_files
+from .git_diff_analyzer import get_staged_or_modified_files, parse_direct_dependencies
+from .token_counter import format_token_display
 
 
 def parse_arguments(args: Optional[List[str]] = None) -> argparse.Namespace:
@@ -64,6 +67,16 @@ def parse_arguments(args: Optional[List[str]] = None) -> argparse.Namespace:
         "--force",
         action="store_true",
         help="タイムスタンプによる差分チェックを無視し、全ファイルを強制的に再処理する",
+    )
+    parser.add_argument(
+        "--no-ui",
+        action="store_true",
+        help="UI/プレゼンテーション層のファイル（.tsx, .html等）を除外してロジック層のみを抽出する",
+    )
+    parser.add_argument(
+        "--git-diff",
+        action="store_true",
+        help="Gitの差分から、変更されたファイルとそれに直接依存するファイルのみを抽出する",
     )
 
     return parser.parse_args(args)
@@ -132,6 +145,19 @@ def main(args: Optional[List[str]] = None) -> int:
             print("  - 強制再ビルドモード(--force)が有効です")
 
         target_files = get_target_files(project_root)
+        
+        if parsed_args.git_diff:
+            print("  - Git差分抽出モードが有効です。変更ファイルと直接依存するファイルのみを抽出します...")
+            modified_files = get_staged_or_modified_files(project_root)
+            if not modified_files:
+                print("    -> Gitの差分が見つかりませんでした。全ファイルを対象とします。")
+            else:
+                target_files = list(parse_direct_dependencies(modified_files, set(target_files)))
+        
+        if parsed_args.no_ui:
+            print("  - UIレイヤー（プレゼンテーション層）のファイルを除外します...")
+            target_files = filter_logic_files(target_files)
+
         tree_text = generate_tree_text(project_root, target_files)
 
         syncer = ProjectSyncer(project_root, output_dir, config)
@@ -161,10 +187,10 @@ def main(args: Optional[List[str]] = None) -> int:
             print(f"  - 単一統合バンドル     : ai_meta/{bundle_path.name} 📦 (ブラウザAIへそのままコピペ推奨)")
 
         print("\n--- 📉 トークン・予算削減アナライザー ---")
-        print(f"  - 元コード推定トークン : 約 {stats.raw_tokens_est:,} tokens ({stats.raw_chars:,} 文字)")
-        print(f"  - 出力コード推定トークン: 約 {stats.skeleton_tokens_est:,} tokens ({stats.skeleton_chars:,} 文字)")
-        print(f"  - 削減されたトークン数 : 約 {stats.saved_tokens:,} tokens")
-        print(f"  - トークン削減率       : {stats.reduction_percentage:.1f}% 削減の大幅なスリム化に成功！🚀")
+        print(f"  - 元コード       : {format_token_display(stats.raw_tokens)} ({stats.raw_chars:,} 文字)")
+        print(f"  - 出力コード     : {format_token_display(stats.skeleton_tokens)} ({stats.skeleton_chars:,} 文字)")
+        print(f"  - 削減トークン数 : 約 {stats.saved_tokens:,} tokens")
+        print(f"  - トークン削減率 : {stats.reduction_percentage:.1f}% 削減の大幅なスリム化に成功！🚀")
 
         return 0
 

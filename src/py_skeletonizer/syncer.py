@@ -11,6 +11,7 @@ from .ast_processor import process_code_all_in_one
 from .role_extractor import RoleEntry, extract_roles_from_ast, generate_role_map_text
 from .dependency_analyzer import DependencyEntry, extract_dependencies_from_ast, generate_dependency_map_text
 from .bundle_builder import TokenStats, build_bundle_file
+from .token_counter import estimate_tokens
 
 
 class ProjectSyncer:
@@ -111,6 +112,7 @@ class ProjectSyncer:
 
             if not is_binary and raw_content is not None:
                 self.token_stats.raw_chars += len(raw_content)
+                self.token_stats.raw_tokens += estimate_tokens(raw_content)
 
             if not force_rebuild and not self._is_outdated(src_file, dest_file):
                 skipped_count += 1
@@ -122,6 +124,7 @@ class ProjectSyncer:
                     if dest_content is not None:
                         self.file_contents_map[rel_path] = dest_content
                         self.token_stats.skeleton_chars += len(dest_content)
+                        self.token_stats.skeleton_tokens += estimate_tokens(dest_content)
                 continue
 
             dest_file.parent.mkdir(parents=True, exist_ok=True)
@@ -133,6 +136,7 @@ class ProjectSyncer:
                 if not is_binary and raw_content is not None:
                     self.file_contents_map[rel_path] = raw_content
                     self.token_stats.skeleton_chars += len(raw_content)
+                    self.token_stats.skeleton_tokens += estimate_tokens(raw_content)
                     if src_file.suffix == ".py":
                         self._read_and_analyze_only(src_file, rel_path)
                 continue
@@ -146,6 +150,7 @@ class ProjectSyncer:
                 self.all_dependency_entries.append(dependency)
                 self.file_contents_map[rel_path] = skeleton_code
                 self.token_stats.skeleton_chars += len(skeleton_code)
+                self.token_stats.skeleton_tokens += estimate_tokens(skeleton_code)
 
                 with open(dest_file, "w", encoding="utf-8") as f:
                     f.write(skeleton_code)

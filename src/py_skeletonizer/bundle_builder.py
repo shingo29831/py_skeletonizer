@@ -5,12 +5,14 @@ Role: ポリシー、プロジェクトツリー、全体辞書、スケルト�
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
-
+from .context_splitter import is_static_skeleton_file
 
 @dataclass
 class TokenStats:
     raw_chars: int = 0
     skeleton_chars: int = 0
+    raw_tokens: int = 0
+    skeleton_tokens: int = 0
 
     @property
     def raw_tokens_est(self) -> int:
@@ -22,13 +24,13 @@ class TokenStats:
 
     @property
     def saved_tokens(self) -> int:
-        return max(0, self.raw_tokens_est - self.skeleton_tokens_est)
+        return max(0, self.raw_tokens - self.skeleton_tokens)
 
     @property
     def reduction_percentage(self) -> float:
-        if self.raw_chars == 0:
+        if self.raw_tokens == 0:
             return 0.0
-        return (1.0 - (self.skeleton_chars / self.raw_chars)) * 100.0
+        return (1.0 - (self.skeleton_tokens / self.raw_tokens)) * 100.0
 
 
 def _discover_policy_text(project_root: Path, custom_policy_path: Optional[Path]) -> str:
@@ -65,6 +67,14 @@ def build_bundle_file(
 
     lines: List[str] = []
 
+    static_items = []
+    dynamic_items = []
+    for rel_path, content in sorted(file_contents.items()):
+        if is_static_skeleton_file(Path(rel_path)):
+            static_items.append((rel_path, content))
+        else:
+            dynamic_items.append((rel_path, content))
+
     if bundle_format == "xml":
         lines.append("<ai_context_bundle>")
         lines.append("  <policy>")
@@ -84,10 +94,19 @@ def build_bundle_file(
         lines.append("  </dependency_graph>")
         lines.append("")
         lines.append("  <codebase>")
-        for rel_path, content in sorted(file_contents.items()):
-            lines.append(f'    <file path="{rel_path}">')
-            lines.append(content.rstrip())
-            lines.append("    </file>")
+        
+        if static_items:
+            lines.append("    <static_skeleton>")
+            for rel_path, content in static_items:
+                lines.append(f'      <file path="{rel_path}">\n{content.rstrip()}\n      </file>')
+            lines.append("    </static_skeleton>")
+            
+        if dynamic_items:
+            lines.append("    <dynamic_flesh>")
+            for rel_path, content in dynamic_items:
+                lines.append(f'      <file path="{rel_path}">\n{content.rstrip()}\n      </file>')
+            lines.append("    </dynamic_flesh>")
+            
         lines.append("  </codebase>")
         lines.append("</ai_context_bundle>")
     else:
@@ -105,12 +124,24 @@ def build_bundle_file(
         lines.append(dependency_map_text.strip())
         lines.append("")
         lines.append("## Codebase Files")
-        for rel_path, content in sorted(file_contents.items()):
-            lines.append(f"### File: `{rel_path}`")
-            lines.append("```python")
-            lines.append(content.rstrip())
-            lines.append("```")
-            lines.append("")
+        
+        if static_items:
+            lines.append("### [Static Skeleton Context]")
+            for rel_path, content in static_items:
+                lines.append(f"#### File: `{rel_path}`")
+                lines.append("```python")
+                lines.append(content.rstrip())
+                lines.append("```")
+                lines.append("")
+                
+        if dynamic_items:
+            lines.append("### [Dynamic Flesh Context]")
+            for rel_path, content in dynamic_items:
+                lines.append(f"#### File: `{rel_path}`")
+                lines.append("```python")
+                lines.append(content.rstrip())
+                lines.append("```")
+                lines.append("")
 
     try:
         bundle_path.write_text("\n".join(lines), encoding="utf-8")
