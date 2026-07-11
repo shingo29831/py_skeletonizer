@@ -25,7 +25,9 @@ def parse_arguments(args: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "project_dir",
         type=Path,
-        help="解析対象のプロジェクト・ルートディレクトリのパス",
+        nargs="?",
+        default=Path("."),
+        help="解析対象のプロジェクト・ルートディレクトリのパス（省略時はカレントディレクトリ）",
     )
     parser.add_argument(
         "output_dir",
