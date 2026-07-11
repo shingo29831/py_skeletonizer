@@ -39,10 +39,10 @@ class ProjectSyncer:
             self.output_dir / f.relative_to(self.project_root) for f in current_target_files
         }
         
-        # 隔離フォルダ内のメタデータファイルを削除保護対象リストに追加
+        # 隔離フォルダ内のメタデータファイルを削除保護対象リストに追加 (.md -> .txtに変更)
         valid_dest_files.add(self.meta_dir / "project_tree.txt")
-        valid_dest_files.add(self.meta_dir / "project_roles.md")
-        valid_dest_files.add(self.meta_dir / "project_dependencies.md")
+        valid_dest_files.add(self.meta_dir / "project_roles.txt")
+        valid_dest_files.add(self.meta_dir / "project_dependencies.txt")
         valid_dest_files.add(self.meta_dir / "ai_context_bundle.xml")
         valid_dest_files.add(self.meta_dir / "ai_context_bundle.markdown")
 
@@ -163,12 +163,13 @@ class ProjectSyncer:
         # ai_meta フォルダを確実に作成
         self.meta_dir.mkdir(parents=True, exist_ok=True)
 
+        # ファイル名を .md から .txt に変更
         role_map_text = generate_role_map_text(self.all_role_entries)
-        role_file = self.meta_dir / "project_roles.md"
+        role_file = self.meta_dir / "project_roles.txt"
         role_file.write_text(role_map_text, encoding="utf-8")
 
         dependency_map_text = generate_dependency_map_text(self.all_dependency_entries)
-        dep_file = self.meta_dir / "project_dependencies.md"
+        dep_file = self.meta_dir / "project_dependencies.txt"
         dep_file.write_text(dependency_map_text, encoding="utf-8")
 
         bundle_path: Optional[Path] = None

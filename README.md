@@ -87,8 +87,8 @@ py-skeletonizer ./my_project ./ai_ready_context \
 ai_ready_context/
 ├── ai_meta/
 │   ├── project_tree.txt         # プロジェクト全体のディレクトリ構造マップ
-│   ├── project_roles.md         # 各モジュール・クラス・関数の責務集約レポート ✨
-│   ├── project_dependencies.md  # 影響範囲を特定するためのインポート依存関係グラフ 🔗
+│   ├── project_roles.txt        # 各モジュール・クラス・関数の責務集約レポート ✨
+│   ├── project_dependencies.txt # 影響範囲を特定するためのインポート依存関係グラフ 🔗
 │   └── ai_context_bundle.xml    # AIへのコピペに最適な全コード統合単一バンドル 📦
 └── src/                         # 元の構造を維持したまま、中身を省略（...）したPythonコード群
 ```
@@ -129,8 +129,8 @@ def login(username, password):
 
 提供する順序：
 1. `ai_meta/project_tree.txt` （プロジェクト全体のディレクトリツリー構造）
-2. `ai_meta/project_roles.md` または バンドルXML内の `<role_architecture_map>` （全モジュール・関数のシグネチャと責務の辞書）
-3. `ai_meta/project_dependencies.md` または バンドルXML内の `<dependency_graph>` （モジュール間の依存関係グラフ）
+2. `ai_meta/project_roles.txt` または バンドルXML内の `<role_architecture_map>` （全モジュール・関数のシグネチャと責務の辞書）
+3. `ai_meta/project_dependencies.txt` または バンドルXML内の `<dependency_graph>` （モジュール間の依存関係グラフ）
 4. 共通の型定義やスキーマファイル または バンドルXML内の `<static_skeleton>` （`types.py` や `schema.py` など、プロジェクトの前提となる静的な定義）
 
 ### 2投目以降（通常の対話 / 動的コンテキストの提供）
