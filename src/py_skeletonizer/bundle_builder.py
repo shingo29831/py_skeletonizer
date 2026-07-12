@@ -59,13 +59,15 @@ def build_bundle_file(
     role_map_text: str,
     dependency_map_text: str,
     file_contents: Dict[str, str],
-    bundle_format: str = "xml",
+    bundle_format: str = "txt",
     custom_policy_path: Optional[Path] = None,
 ) -> Path:
     policy_text = _discover_policy_text(project_root, custom_policy_path)
-    bundle_path = output_dir / f"ai_context_bundle.{bundle_format}"
+    bundle_path = output_dir / "ai_context_bundle.txt"
+    static_skeleton_path = output_dir / "static_skeleton.txt"
 
     lines: List[str] = []
+    static_lines: List[str] = []
 
     static_items = []
     dynamic_items = []
@@ -75,7 +77,7 @@ def build_bundle_file(
         else:
             dynamic_items.append((rel_path, content))
 
-    if bundle_format == "xml":
+    if bundle_format == "xml" or bundle_format == "txt":
         lines.append("<ai_context_bundle>")
         lines.append("  <policy>")
         lines.append(policy_text.strip())
@@ -97,9 +99,13 @@ def build_bundle_file(
         
         if static_items:
             lines.append("    <static_skeleton>")
+            static_lines.append("<static_skeleton>")
             for rel_path, content in static_items:
-                lines.append(f'      <file path="{rel_path}">\n{content.rstrip()}\n      </file>')
+                file_block = f'      <file path="{rel_path}">\n{content.rstrip()}\n      </file>'
+                lines.append(file_block)
+                static_lines.append(file_block)
             lines.append("    </static_skeleton>")
+            static_lines.append("</static_skeleton>")
             
         if dynamic_items:
             lines.append("    <dynamic_flesh>")
@@ -127,12 +133,19 @@ def build_bundle_file(
         
         if static_items:
             lines.append("### [Static Skeleton Context]")
+            static_lines.append("### [Static Skeleton Context]")
             for rel_path, content in static_items:
                 lines.append(f"#### File: `{rel_path}`")
                 lines.append("```python")
                 lines.append(content.rstrip())
                 lines.append("```")
                 lines.append("")
+                
+                static_lines.append(f"#### File: `{rel_path}`")
+                static_lines.append("```python")
+                static_lines.append(content.rstrip())
+                static_lines.append("```")
+                static_lines.append("")
                 
         if dynamic_items:
             lines.append("### [Dynamic Flesh Context]")
@@ -145,6 +158,8 @@ def build_bundle_file(
 
     try:
         bundle_path.write_text("\n".join(lines), encoding="utf-8")
+        if static_lines:
+            static_skeleton_path.write_text("\n".join(static_lines), encoding="utf-8")
         return bundle_path
     except OSError as e:
         raise RuntimeError(f"バンドルファイルの生成に失敗しました: {bundle_path} ({e})")

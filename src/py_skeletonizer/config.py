@@ -12,7 +12,7 @@ class SkeletonConfig:
     full_code_paths: Set[Path] = field(default_factory=set)
     keep_functions: Set[str] = field(default_factory=set)
     create_bundle: bool = True
-    bundle_format: str = "xml"  # "xml" または "markdown"
+    bundle_format: str = "txt"  # "txt", "xml" または "markdown"
     policy_path: Optional[Path] = None
 
     def is_full_code_path(self, target_path: Path) -> bool:

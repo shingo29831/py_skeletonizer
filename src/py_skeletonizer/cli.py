@@ -55,9 +55,9 @@ def parse_arguments(args: Optional[List[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--format",
-        choices=["xml", "markdown"],
-        default="xml",
-        help="単一バンドルファイルの出力フォーマット (デフォルト: xml)",
+        choices=["txt", "xml", "markdown"],
+        default="txt",
+        help="単一バンドルファイルの出力フォーマット (デフォルト: txt)",
     )
     parser.add_argument(
         "--policy",
@@ -183,10 +183,13 @@ def main(args: Optional[List[str]] = None) -> int:
             print(f"  - 削除した古いファイル: {deleted_count} 件")
         print("\n--- 📊 辞書・マニュアル出力 (ai_meta/ フォルダ内に隔離集約) ---")
         print(f"  - ツリー構造マップ     : ai_meta/project_tree.txt")
-        print(f"  - 役割退避マニュアル   : ai_meta/project_roles.md ✨")
-        print(f"  - 依存関係グラフ       : ai_meta/project_dependencies.md 🔗")
+        print(f"  - 役割退避マニュアル   : ai_meta/project_roles.txt ✨")
+        print(f"  - 依存関係グラフ       : ai_meta/project_dependencies.txt 🔗")
         if bundle_path:
             print(f"  - 単一統合バンドル     : ai_meta/{bundle_path.name} 📦 (ブラウザAIへそのままコピペ推奨)")
+            static_path = bundle_path.parent / "static_skeleton.txt"
+            if static_path.exists():
+                print(f"  - 静的スケルトン       : ai_meta/{static_path.name} 🦴")
 
         print("\n--- 📉 トークン・予算削減アナライザー ---")
         print(f"  - 元コード       : {format_token_display(stats.raw_tokens)} ({stats.raw_chars:,} 文字)")
