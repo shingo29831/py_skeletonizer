@@ -12,14 +12,26 @@ ROLE_COMMENT_TAGS = ("Role:", "AI:", "Rule:", "Depends:", "Notice:")
 
 
 class StubTransformer(ast.NodeTransformer):
-    def __init__(self, keep_functions: Optional[Set[str]] = None):
+    def __init__(self, keep_functions: Optional[Set[str]] = None, only_nodes: Optional[Set[str]] = None):
         self.keep_functions = keep_functions or set()
+        self.only_nodes = only_nodes or set()
         self.current_class_name: Optional[str] = None
         super().__init__()
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+    def visit_ClassDef(self, node: ast.ClassDef) -> Optional[ast.AST]:
         old_class_name = self.current_class_name
         self.current_class_name = node.name
+
+        if self.only_nodes:
+            class_is_targeted = node.name in self.only_nodes
+            has_targeted_method = any(
+                isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and f"{node.name}.{n.name}" in self.only_nodes
+                for n in node.body
+            )
+            if not class_is_targeted and not has_targeted_method:
+                self.current_class_name = old_class_name
+                return None
+
         self.generic_visit(node)
         self.current_class_name = old_class_name
         return node
@@ -39,7 +51,14 @@ class StubTransformer(ast.NodeTransformer):
             return True
         return False
 
-    def _process_func_node(self, node: ast.AST, func_name: str) -> ast.AST:
+    def _process_func_node(self, node: ast.AST, func_name: str) -> Optional[ast.AST]:
+        full_name = f"{self.current_class_name}.{func_name}" if self.current_class_name else func_name
+
+        if self.only_nodes:
+            class_is_targeted = self.current_class_name and self.current_class_name in self.only_nodes
+            if not class_is_targeted and func_name not in self.only_nodes and full_name not in self.only_nodes:
+                return None
+
         if self._should_keep_implementation(node, func_name):
             self.generic_visit(node)
             return node
@@ -55,17 +74,18 @@ class StubTransformer(ast.NodeTransformer):
         node.body = new_body
         return node
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> Optional[ast.AST]:
         return self._process_func_node(node, node.name)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Optional[ast.AST]:
         return self._process_func_node(node, node.name)
 
 
 def process_code_all_in_one(
     source_code: str,
     rel_file_path: str,
-    keep_functions: Optional[Set[str]] = None
+    keep_functions: Optional[Set[str]] = None,
+    only_nodes: Optional[Set[str]] = None
 ) -> Tuple[str, List[RoleEntry], DependencyEntry]:
     try:
         tree = ast.parse(source_code)
@@ -73,7 +93,7 @@ def process_code_all_in_one(
         roles = extract_roles_from_ast(tree, rel_file_path, source_code)
         dependency = extract_dependencies_from_ast(tree, rel_file_path)
 
-        transformer = StubTransformer(keep_functions=keep_functions)
+        transformer = StubTransformer(keep_functions=keep_functions, only_nodes=only_nodes)
         transformed_tree = transformer.visit(tree)
         ast.fix_missing_locations(transformed_tree)
         skeleton_code = ast.unparse(transformed_tree)

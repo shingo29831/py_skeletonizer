@@ -49,6 +49,23 @@ def parse_arguments(args: Optional[List[str]] = None) -> argparse.Namespace:
         help="内部実装（中身）を削除せず保持する関数やメソッド名",
     )
     parser.add_argument(
+        "--focus",
+        action="append",
+        default=[],
+        help="指定したファイルまたはディレクトリのみを処理対象とする（カンマ区切りで複数指定可）",
+    )
+    parser.add_argument(
+        "--focus-deps",
+        action="store_true",
+        help="--focusで指定したファイルの直接依存ファイルも自動的に対象に含める",
+    )
+    parser.add_argument(
+        "--only-nodes",
+        action="append",
+        default=[],
+        help="指定したクラスや関数のみを抽出し、それ以外を完全に削除する（カンマ区切り）",
+    )
+    parser.add_argument(
         "--no-bundle",
         action="store_true",
         help="単一ファイル・バンドル(ai_context_bundle)の出力を行わない",
@@ -125,10 +142,12 @@ def main(args: Optional[List[str]] = None) -> int:
             resolved_full_paths.add(p)
 
         keep_functions = _process_comma_separated_args(parsed_args.keep_func)
+        only_nodes = _process_comma_separated_args(parsed_args.only_nodes)
 
         config = SkeletonConfig(
             full_code_paths=resolved_full_paths,
             keep_functions=keep_functions,
+            only_nodes=only_nodes,
             create_bundle=not parsed_args.no_bundle,
             bundle_format=parsed_args.format,
             policy_path=parsed_args.policy.resolve() if parsed_args.policy else None,
@@ -141,6 +160,8 @@ def main(args: Optional[List[str]] = None) -> int:
             print(f"  - フルコード保持パス: {len(config.full_code_paths)}件")
         if config.keep_functions:
             print(f"  - 保持対象関数・メソッド: {', '.join(config.keep_functions)}")
+        if config.only_nodes:
+            print(f"  - 抽出対象ノード(他は削除): {', '.join(config.only_nodes)}")
         if config.create_bundle:
             print(f"  - バンドル形式: {config.bundle_format.upper()}")
         if parsed_args.force:
@@ -148,6 +169,29 @@ def main(args: Optional[List[str]] = None) -> int:
 
         target_files = get_target_files(project_root)
         
+        focus_paths = _process_comma_separated_args(parsed_args.focus)
+        if focus_paths:
+            print("  - フォーカスモードが有効です。指定されたファイルのみを抽出します...")
+            resolved_focus_files = set()
+            for p_str in focus_paths:
+                p = Path(p_str)
+                if not p.is_absolute():
+                    p = (project_root / p).resolve()
+                
+                if p.is_dir():
+                    for tf in target_files:
+                        if p in tf.parents or p == tf.parent:
+                            resolved_focus_files.add(tf)
+                else:
+                    if p in target_files:
+                        resolved_focus_files.add(p)
+            
+            if parsed_args.focus_deps:
+                print("  - フォーカス対象の直接依存ファイルも抽出します...")
+                resolved_focus_files = parse_direct_dependencies(resolved_focus_files, set(target_files))
+            
+            target_files = list(resolved_focus_files)
+
         if parsed_args.git_diff:
             print("  - Git差分抽出モードが有効です。変更ファイルと直接依存するファイルのみを抽出します...")
             modified_files = get_staged_or_modified_files(project_root)
@@ -168,7 +212,6 @@ def main(args: Optional[List[str]] = None) -> int:
             target_files, tree_text=tree_text, force_rebuild=parsed_args.force
         )
 
-        # ツリーファイルも ai_meta フォルダ直下に書き出すよう修正
         meta_dir = output_dir / "ai_meta"
         meta_dir.mkdir(parents=True, exist_ok=True)
         tree_file = meta_dir / "project_tree.txt"

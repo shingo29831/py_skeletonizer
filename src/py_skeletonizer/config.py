@@ -11,6 +11,7 @@ from typing import Optional, Set
 class SkeletonConfig:
     full_code_paths: Set[Path] = field(default_factory=set)
     keep_functions: Set[str] = field(default_factory=set)
+    only_nodes: Set[str] = field(default_factory=set)
     create_bundle: bool = True
     bundle_format: str = "txt"  # "txt", "xml" または "markdown"
     policy_path: Optional[Path] = None

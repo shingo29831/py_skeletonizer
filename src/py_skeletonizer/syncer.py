@@ -144,7 +144,7 @@ class ProjectSyncer:
             try:
                 assert raw_content is not None
                 skeleton_code, roles, dependency = process_code_all_in_one(
-                    raw_content, rel_path, keep_functions=self.config.keep_functions
+                    raw_content, rel_path, keep_functions=self.config.keep_functions, only_nodes=self.config.only_nodes
                 )
                 self.all_role_entries.extend(roles)
                 self.all_dependency_entries.append(dependency)
