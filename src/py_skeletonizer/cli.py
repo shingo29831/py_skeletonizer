@@ -230,6 +230,9 @@ def main(args: Optional[List[str]] = None) -> int:
         print(f"  - 依存関係グラフ       : ai_meta/project_dependencies.txt 🔗")
         if bundle_path:
             print(f"  - 単一統合バンドル     : ai_meta/{bundle_path.name} 📦 (ブラウザAIへそのままコピペ推奨)")
+            arch_path = bundle_path.parent / "ai_architecture_bundle.txt"
+            if arch_path.exists():
+                print(f"  - アーキテクチャ要約   : ai_meta/{arch_path.name} 🗺️ (変更対象ファイルの特定に最適)")
             static_path = bundle_path.parent / "static_skeleton.txt"
             if static_path.exists():
                 print(f"  - 静的スケルトン       : ai_meta/{static_path.name} 🦴")

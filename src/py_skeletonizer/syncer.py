@@ -45,6 +45,7 @@ class ProjectSyncer:
         valid_dest_files.add(self.meta_dir / "project_dependencies.txt")
         valid_dest_files.add(self.meta_dir / "ai_context_bundle.txt")
         valid_dest_files.add(self.meta_dir / "static_skeleton.txt")
+        valid_dest_files.add(self.meta_dir / "ai_architecture_bundle.txt")
 
         deleted_count = 0
         for root, _, files in os.walk(self.output_dir):

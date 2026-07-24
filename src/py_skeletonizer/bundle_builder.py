@@ -65,9 +65,11 @@ def build_bundle_file(
     policy_text = _discover_policy_text(project_root, custom_policy_path)
     bundle_path = output_dir / "ai_context_bundle.txt"
     static_skeleton_path = output_dir / "static_skeleton.txt"
+    architecture_path = output_dir / "ai_architecture_bundle.txt"
 
     lines: List[str] = []
     static_lines: List[str] = []
+    arch_lines: List[str] = []
 
     static_items = []
     dynamic_items = []
@@ -78,6 +80,25 @@ def build_bundle_file(
             dynamic_items.append((rel_path, content))
 
     if bundle_format == "xml" or bundle_format == "txt":
+        arch_lines.append("<ai_architecture_bundle>")
+        arch_lines.append("  <description>This bundle contains only the project architecture, roles, and dependencies. Use this to identify which files need to be modified.</description>")
+        arch_lines.append("  <policy>")
+        arch_lines.append(policy_text.strip())
+        arch_lines.append("  </policy>")
+        arch_lines.append("")
+        arch_lines.append("  <project_tree>")
+        arch_lines.append(tree_text.strip())
+        arch_lines.append("  </project_tree>")
+        arch_lines.append("")
+        arch_lines.append("  <role_architecture_map>")
+        arch_lines.append(role_map_text.strip())
+        arch_lines.append("  </role_architecture_map>")
+        arch_lines.append("")
+        arch_lines.append("  <dependency_graph>")
+        arch_lines.append(dependency_map_text.strip())
+        arch_lines.append("  </dependency_graph>")
+        arch_lines.append("</ai_architecture_bundle>")
+
         lines.append("<ai_context_bundle>")
         lines.append("  <policy>")
         lines.append(policy_text.strip())
@@ -116,6 +137,21 @@ def build_bundle_file(
         lines.append("  </codebase>")
         lines.append("</ai_context_bundle>")
     else:
+        arch_lines.append("# AI Architecture Bundle")
+        arch_lines.append("> This bundle contains only the project architecture, roles, and dependencies. Use this to identify which files need to be modified.")
+        arch_lines.append("")
+        arch_lines.append("## Policy & Rules")
+        arch_lines.append(policy_text.strip())
+        arch_lines.append("")
+        arch_lines.append("## Project Tree")
+        arch_lines.append("```text")
+        arch_lines.append(tree_text.strip())
+        arch_lines.append("```")
+        arch_lines.append("")
+        arch_lines.append(role_map_text.strip())
+        arch_lines.append("")
+        arch_lines.append(dependency_map_text.strip())
+
         lines.append("# AI Context Bundle")
         lines.append("## Policy & Rules")
         lines.append(policy_text.strip())
@@ -158,6 +194,7 @@ def build_bundle_file(
 
     try:
         bundle_path.write_text("\n".join(lines), encoding="utf-8")
+        architecture_path.write_text("\n".join(arch_lines), encoding="utf-8")
         if static_lines:
             static_skeleton_path.write_text("\n".join(static_lines), encoding="utf-8")
         return bundle_path
